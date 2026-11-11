@@ -1,0 +1,79 @@
+name: Daily Morning AI Radar
+
+on:
+  schedule:
+    # 08:00 AM IST = 02:30 UTC daily
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  morning-briefing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check Required Gmail Secrets
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          if [ -z "$GMAIL_USER" ] || [ -z "$GMAIL_APP_PASSWORD" ]; then
+            echo "::error::Missing GMAIL_USER or GMAIL_APP_PASSWORD in Repository Secrets (Settings -> Secrets and variables -> Actions)."
+            exit 1
+          fi
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Tech Intelligence Radar
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Restore Radar History Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/radar.db
+          key: radar-db-${{ github.run_id }}
+          restore-keys: |
+            radar-db-
+
+      - name: Run Morning Intelligence Swarm & Send Email
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          BRIEFING_RECIPIENT: ${{ secrets.BRIEFING_RECIPIENT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CORE_TOPICS: ${{ vars.CORE_TOPICS || 'AI Agents, Model Context Protocol' }}
+          INCLUDE_TRENDING_AI: ${{ vars.INCLUDE_TRENDING_AI || 'true' }}
+          BRIEFING_ITEMS_LIMIT: ${{ vars.BRIEFING_ITEMS_LIMIT || '8' }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          radar morning
+
+      - name: Save Updated Radar History Cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: data/radar.db
+          key: radar-db-${{ github.run_id }}
+
+      - name: Upload Generated Briefings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: morning-briefing-${{ github.run_number }}
+          path: |
+            briefings/*.md
+            briefings/*.html
+            data/morning_scheduler.log
+          retention-days: 14
+          if-no-files-found: ignore

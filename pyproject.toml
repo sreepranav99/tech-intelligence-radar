@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tech-intelligence-radar"
+version = "0.1.0"
+description = "Autonomous Market & Tech Intelligence Radar combining MCP and Multi-Agent verification"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.0.0",
+    "aiosqlite>=0.20.0",
+    "rich>=13.0.0",
+    "beautifulsoup4>=4.12.0",
+    "jinja2>=3.1.0",
+    "python-dotenv>=1.0.0",
+    "tenacity>=8.2.0"
+]
+
+[project.scripts]
+radar = "radar.cli:main"

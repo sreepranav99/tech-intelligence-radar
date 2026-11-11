@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "external_fetch": {
+      "command": "C:\\Users\\Admin\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+      "args": [
+        "-m",
+        "mcp_server_fetch"
+      ],
+      "description": "Official Anthropic MCP Fetch Server: Fetches and converts web content to clean Markdown",
+      "enabled": true
+    },
+    "external_filesystem": {
+      "command": "npx.cmd",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:\\Users\\Admin\\.gemini\\antigravity\\scratch\\tech-intelligence-radar\\briefings"
+      ],
+      "description": "Official Filesystem MCP Server: Sandboxed file inspection and verification in briefings directory",
+      "enabled": true
+    }
+  }
+}

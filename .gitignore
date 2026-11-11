@@ -1,0 +1,12 @@
+.env
+data/
+briefings/*.md
+briefings/*.html
+*.db
+*.log
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
