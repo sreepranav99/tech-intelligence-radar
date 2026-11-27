@@ -34,6 +34,7 @@ class GitHubScoutAgent(BaseAgent):
                             "stars": repo.get("stars", 0),
                             "forks": repo.get("forks", 0),
                             "language": repo.get("language", "Unknown"),
+                            "created_at": repo.get("created_at"),
                             "pushed_at": repo.get("pushed_at")
                         }
                     )

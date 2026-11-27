@@ -122,7 +122,12 @@ async def get_repository_details(owner: str, repo: str) -> Dict[str, Any]:
             if resp.status_code == 404:
                 return {"exists": False, "error": "Repository not found (404)"}
             if resp.status_code in (403, 429):
-                return {"exists": True, "error": "Rate limit exceeded while verifying"}
+                # If cached version exists, use it as unconfirmed fallback
+                stale = _read_cache(cache_path, max_age_hours=72)
+                if stale:
+                    stale["is_unconfirmed"] = True
+                    return {"source": "cache_fallback", "data": stale, "warning": "Rate limit exceeded; verified via cache"}
+                return {"exists": True, "is_unconfirmed": True, "error": "Rate limit exceeded while verifying"}
             
             resp.raise_for_status()
             data = resp.json()

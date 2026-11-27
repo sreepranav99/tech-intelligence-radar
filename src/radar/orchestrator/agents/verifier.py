@@ -102,18 +102,38 @@ class FactCheckerAgent(BaseAgent):
             )
 
         live_stars = live_data.get("stars", 0)
+        claimed_stars = candidate.signal.metrics.get("stars", 0)
+        is_unconfirmed = bool(live_data.get("is_unconfirmed"))
+
+        # Apply star tolerance check: if live count is more than 10% lower than claimed, reject
+        if claimed_stars > 0 and not is_unconfirmed and live_stars < (claimed_stars * 0.9):
+            return VerifiedIntel(
+                candidate=candidate,
+                is_verified=False,
+                verified_metrics={"claimed_stars": claimed_stars, "live_stars": live_stars},
+                fact_check_notes=f"Rejected: Live stars ({live_stars}) are >10% lower than claimed ({claimed_stars})."
+            )
+
         verified_metrics = {
             "verified_stars": live_stars,
             "verified_forks": live_data.get("forks", 0),
             "language": candidate.signal.metrics.get("language") or "Unknown",
+            "created_at": live_data.get("created_at") or candidate.signal.metrics.get("created_at"),
             "last_push": live_data.get("last_push"),
-            "license": live_data.get("license") or "None"
+            "license": live_data.get("license") or "None",
+            "archived": live_data.get("archived", False),
+            "is_unconfirmed": is_unconfirmed
         }
 
-        notes = (
-            f"Verified live on GitHub. Confirmed {live_stars} stars, "
-            f"active push at {live_data.get('last_push', 'N/A')}, license: {verified_metrics['license']}."
-        )
+        if is_unconfirmed:
+            notes = (
+                f"Unconfirmed: Direct GitHub API rate-limited; metrics ({live_stars} stars) inferred from cache/search fallback."
+            )
+        else:
+            notes = (
+                f"Verified live on GitHub. Confirmed {live_stars:,} stars, "
+                f"active push at {live_data.get('last_push', 'N/A')}, license: {verified_metrics['license']}."
+            )
 
         return VerifiedIntel(
             candidate=candidate,

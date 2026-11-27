@@ -7,14 +7,58 @@ from radar.config import BRIEFINGS_DIR
 
 TEMPLATE_PATH = Path(__file__).resolve().parent / "template.html"
 
-def classify_ring(novelty: float, velocity: float) -> str:
-    """Classify into Thoughtworks Radar rings."""
-    if velocity >= 8.5 and novelty >= 7.5:
-        return "ADOPT"
-    elif velocity >= 7.0 or novelty >= 7.0:
-        return "TRIAL"
-    elif velocity >= 5.5:
+def classify_ring(
+    novelty: float,
+    velocity: float,
+    metrics: Optional[Dict[str, Any]] = None,
+    fact_check_notes: str = ""
+) -> str:
+    """Classify into Thoughtworks Radar rings using maturity, activity, and velocity."""
+    m = metrics or {}
+    notes = (fact_check_notes or "").lower()
+
+    # Rule 1: Hold (unexplained star pattern, unresolved security issue, archived, or no activity for 90 days)
+    if m.get("archived") or "archived" in notes or "unexplained" in notes or "security" in notes:
+        return "HOLD"
+
+    last_push = m.get("last_push")
+    if last_push:
+        try:
+            p_date = datetime.fromisoformat(str(last_push).replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            if (now - p_date).total_seconds() > (90 * 86400):
+                return "HOLD"
+        except Exception:
+            pass
+
+    # Rule 2: Assess (capped) - Pre-release, developer preview, or unconfirmed metrics
+    if m.get("is_unconfirmed") or "unconfirmed" in notes or "preview" in notes or "pre-release" in notes or "unverified" in notes:
         return "ASSESS"
+
+    # Rule 3: Adopt - Velocity 7.0+, stable release, at least 6 months old, confirmed hands-on use
+    created_at = m.get("created_at")
+    age_days = 0.0
+    if created_at:
+        try:
+            c_date = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            age_days = (now - c_date).total_seconds() / 86400.0
+        except Exception:
+            age_days = 0.0
+
+    is_mature = (age_days >= 180)
+    has_license = bool(m.get("license") and m.get("license") != "None")
+    if velocity >= 7.0 and is_mature and has_license:
+        return "ADOPT"
+
+    # Rule 4: Trial - Velocity or Novelty 7.0+
+    if velocity >= 7.0 or novelty >= 7.0:
+        return "TRIAL"
+
+    # Rule 5: Assess - Velocity 5.5+
+    if velocity >= 5.5:
+        return "ASSESS"
+
     return "HOLD"
 
 def generate_radar_html_from_state(state, output_dir: Path = BRIEFINGS_DIR) -> Path:
@@ -24,7 +68,7 @@ def generate_radar_html_from_state(state, output_dir: Path = BRIEFINGS_DIR) -> P
     for item in state.verified_items:
         cand = item.candidate
         sig = cand.signal
-        ring = classify_ring(cand.novelty_score, cand.velocity_score)
+        ring = classify_ring(cand.novelty_score, cand.velocity_score, item.verified_metrics, item.fact_check_notes)
         v_delta = sig.metrics.get("velocity_delta", {})
 
         items_payload.append({

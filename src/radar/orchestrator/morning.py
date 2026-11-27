@@ -121,7 +121,7 @@ async def run_morning_cycle(send_email: bool = True) -> Dict[str, Any]:
                 "title": sig.title,
                 "url": sig.url,
                 "category": cand.category,
-                "ring": classify_ring(cand.novelty_score, cand.velocity_score),
+                "ring": classify_ring(cand.novelty_score, cand.velocity_score, item.verified_metrics, item.fact_check_notes),
                 "novelty_score": cand.novelty_score,
                 "velocity_score": cand.velocity_score,
                 "summary": _clean_truncate(sig.raw_snippet or cand.justification, max_len=320),

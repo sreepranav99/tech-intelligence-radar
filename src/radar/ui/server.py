@@ -9,7 +9,6 @@ import urllib.parse
 from pathlib import Path
 from radar.config import BRIEFINGS_DIR
 from radar.mcp_server.storage.db import get_all_tracked_entities, init_db
-from radar.orchestrator.engine import RadarEngine
 from radar.ui.generator import generate_radar_html_from_state
 
 DEFAULT_PORT = 8844
@@ -39,6 +38,7 @@ def _run_engine_thread(topic: str):
         asyncio.set_event_loop(loop)
         
         loop.run_until_complete(init_db())
+        from radar.orchestrator.engine import RadarEngine
         engine = RadarEngine()
 
         def on_step(step_name: str, state):

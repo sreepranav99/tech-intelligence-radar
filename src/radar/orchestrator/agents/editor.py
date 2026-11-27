@@ -5,6 +5,7 @@ from radar.config import BRIEFINGS_DIR
 from radar.orchestrator.agents.base import BaseAgent
 from radar.orchestrator.state import RadarState
 from radar.orchestrator.llm import LLMClient
+from radar.ui.generator import classify_ring
 
 class ExecutiveEditorAgent(BaseAgent):
     """Synthesizes verified items into an actionable Markdown Briefing and persists records via MCP."""
@@ -17,15 +18,21 @@ class ExecutiveEditorAgent(BaseAgent):
         )
         self.llm = LLMClient()
 
-    def _classify_radar_quadrant(self, novelty: float, velocity: float) -> str:
-        """Assign Tech Radar recommendation quadrant."""
-        if velocity >= 8.5 and novelty >= 7.5:
-            return "ADOPT / PRIORITIZE"
-        elif velocity >= 7.0 or novelty >= 7.0:
-            return "TRIAL / PROTOTYPE"
-        elif velocity >= 5.5:
-            return "ASSESS / MONITOR"
-        return "HOLD / WATCH"
+    def _classify_radar_quadrant(self, candidate, item) -> str:
+        """Assign Tech Radar recommendation quadrant based on maturity and velocity."""
+        ring = classify_ring(
+            candidate.novelty_score,
+            candidate.velocity_score,
+            item.verified_metrics,
+            item.fact_check_notes
+        )
+        labels = {
+            "ADOPT": "ADOPT / PROVEN",
+            "TRIAL": "TRIAL / PROTOTYPE",
+            "ASSESS": "ASSESS / MONITOR",
+            "HOLD": "HOLD / WATCH"
+        }
+        return labels.get(ring, f"{ring} / EVALUATE")
 
     async def execute(self, state: RadarState) -> None:
         state.log(f"[{self.name}] Synthesizing executive briefing from {len(state.verified_items)} verified items...")
@@ -77,7 +84,7 @@ class ExecutiveEditorAgent(BaseAgent):
         for idx, item in enumerate(state.verified_items, start=1):
             cand = item.candidate
             sig = cand.signal
-            quadrant = self._classify_radar_quadrant(cand.novelty_score, cand.velocity_score)
+            quadrant = self._classify_radar_quadrant(cand, item)
 
             lines.append(f"### {idx}. [{sig.title}]({sig.url})")
             lines.append(f"* **Category**: `{cand.category}` | **Radar Status**: `{quadrant}`")
@@ -104,7 +111,7 @@ class ExecutiveEditorAgent(BaseAgent):
         for item in state.verified_items:
             c = item.candidate
             s = c.signal
-            rec = self._classify_radar_quadrant(c.novelty_score, c.velocity_score)
+            rec = self._classify_radar_quadrant(c, item)
             v_badge = s.metrics.get("velocity_delta", {}).get("badge", "New")
             lines.append(f"| [{s.external_id}]({s.url}) | {c.category} | {c.novelty_score} | {c.velocity_score} | `{v_badge}` | **{rec}** |")
         lines.append("")

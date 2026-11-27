@@ -1,5 +1,6 @@
 import re
-from typing import List
+from datetime import datetime, timezone
+from typing import List, Dict, Any, Optional
 from radar.config import BRIEFING_ITEMS_LIMIT
 from radar.orchestrator.agents.base import BaseAgent
 from radar.orchestrator.state import RadarState, ScoredCandidate
@@ -44,85 +45,86 @@ class SignalAnalystAgent(BaseAgent):
             return "Research / Evaluation"
         return "Ecosystem Discussion"
 
-    def _compute_velocity_score(self, signal) -> float:
-        """Calculate momentum based on stars or discussion activity."""
-        metrics = signal.metrics
+    def _compute_velocity_score(self, signal, velocity_delta: Optional[Dict[str, Any]] = None) -> float:
+        """Calculate momentum based on stars gained per day or discussion activity."""
+        metrics = signal.metrics or {}
         if signal.source_type == "github":
-            stars = metrics.get("stars", 0)
-            if stars > 1000:
+            stars = int(metrics.get("stars", 0))
+            # 1. Historical delta if available: stars gained per day since last scan
+            if velocity_delta and velocity_delta.get("has_history") and velocity_delta.get("stars_per_day", 0.0) > 0:
+                stars_per_day = float(velocity_delta.get("stars_per_day", 0.0))
+            else:
+                # 2. First run: stars divided by age in days (minimum 7 days)
+                created_at = metrics.get("created_at")
+                age_days = 7.0
+                if created_at:
+                    try:
+                        c_date = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+                        now = datetime.now(timezone.utc)
+                        age_days = max(7.0, (now - c_date).total_seconds() / 86400.0)
+                    except Exception:
+                        age_days = 7.0
+                stars_per_day = stars / age_days
+
+            # Velocity bands:
+            # 100+ per day = 9.5, 30+ = 8.5, 10+ = 7.5, 3+ = 6.5, below = 4.0
+            if stars_per_day >= 100:
                 return 9.5
-            elif stars > 300:
+            elif stars_per_day >= 30:
                 return 8.5
-            elif stars > 100:
+            elif stars_per_day >= 10:
                 return 7.5
-            elif stars > 30:
+            elif stars_per_day >= 3:
                 return 6.5
-            return 5.0
+            return 4.0
+
         elif signal.source_type == "hackernews":
-            points = metrics.get("points", 0)
-            comments = metrics.get("comments", 0)
-            score = min(9.5, (points * 0.015) + (comments * 0.025) + 4.5)
+            points = int(metrics.get("points", 0))
+            comments = int(metrics.get("comments", 0))
+            score = min(9.2, (points * 0.015) + (comments * 0.025) + 4.5)
             return round(score, 1)
         elif signal.source_type == "reddit":
-            score_val = metrics.get("score", 0)
-            comments = metrics.get("comments", 0)
-            score = min(9.2, (score_val * 0.02) + (comments * 0.03) + 4.5)
+            score_val = int(metrics.get("score", 0))
+            comments = int(metrics.get("comments", 0))
+            score = min(9.0, (score_val * 0.02) + (comments * 0.03) + 4.5)
             return round(score, 1)
         elif signal.source_type == "arxiv":
             return 7.4  # Fresh academic preprint momentum without crowding out live GitHub/HN tools
-        return 5.0
-
-    def _build_takeaway(self, signal, category: str, velocity: float, novelty: float, velocity_delta: dict, is_breakout: bool) -> str:
-        """Synthesize a crisp 'Why You Should Care' engineering takeaway distinct from raw description."""
-        m = signal.metrics or {}
-        if is_breakout:
-            badge = velocity_delta.get("badge", "Surge Detected")
-            return f"⚡ {badge}. Rapid ecosystem adoption signals active production experimentation in {category}."
-
-        if signal.source_type == "github":
-            stars = int(m.get("stars", 0))
-            forks = int(m.get("forks", 0))
-            lang = m.get("language") or "Multi-language"
-            return (
-                f"Active {lang} open-source {category.lower()} with {stars:,} GitHub stars and {forks:,} forks "
-                f"(Velocity {velocity}/10, Novelty {novelty}/10) — worth evaluating for your AI workflow stack."
-            )
-        elif signal.source_type == "hackernews":
-            pts = int(m.get("points", 0))
-            cmts = int(m.get("comments", 0))
-            return (
-                f"Sparked high-signal developer debate on Hacker News ({pts:,} points, {cmts:,} comments), "
-                f"indicating strong practitioner interest in this {category.lower()}."
-            )
-        elif signal.source_type == "reddit":
-            sc = int(m.get("score", 0))
-            cmts = int(m.get("comments", 0))
-            sub = m.get("subreddit", "LocalLLaMA")
-            return (
-                f"Practitioner discussion in r/{sub} ({sc:,} upvotes, {cmts:,} comments) highlighting hands-on benchmarks, "
-                f"trade-offs, or real-world deployment patterns."
-            )
-        elif signal.source_type == "arxiv":
-            return (
-                f"Recent research preprint advancing formal architectures or safety/evaluation methods for autonomous AI systems "
-                f"(Novelty {novelty}/10)."
-            )
-        return f"Verified emerging signal in {category} (Velocity {velocity}/10, Novelty {novelty}/10)."
+        return 4.0
 
     def _compute_novelty_score(self, signal, is_past_duplicate: bool) -> float:
-        if is_past_duplicate:
-            return 3.0  # Penalize already known items
-        
+        """Calculate novelty score (1.0 to 10.0) based on age, markers, and well-known cap."""
+        metrics = signal.metrics or {}
+        stars = int(metrics.get("stars", 0))
+        created_at = metrics.get("created_at")
+        age_days = 999.0
+        if created_at:
+            try:
+                c_date = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                age_days = max(0.0, (now - c_date).total_seconds() / 86400.0)
+            except Exception:
+                age_days = 999.0
+
+        # Well-known cap: Maximum 3.0 if over 12 months old with >20,000 stars or marked duplicate
+        if is_past_duplicate or (age_days > 365 and stars > 20000):
+            return 3.0
+
+        # Start base at 5.0
+        score = 5.0
+
+        # Add 2.0 if under 30 days old, or 1.0 if under 90 days old
+        if age_days < 30:
+            score += 2.0
+        elif age_days < 90:
+            score += 1.0
+
+        # Add 1.5 once for marker such as mcp, agent, autonomous, zero-shot
         text = f"{signal.title} {signal.raw_snippet}".lower()
-        # Bonus for high-signal technical indicators
-        bonus = 0.0
-        if any(k in text for k in ["autonomous", "mcp", "protocol", "agent", "orchestration", "zero-shot"]):
-            bonus += 1.5
-        if len(signal.raw_snippet) > 40:
-            bonus += 0.5
-            
-        base = 6.0
-        return min(10.0, round(base + bonus, 1))
+        if any(k in text for k in ["mcp", "autonomous", "agent", "orchestration", "zero-shot", "agentic"]):
+            score += 1.5
+
+        return min(10.0, round(score, 1))
 
     async def execute(self, state: RadarState) -> None:
         state.log(f"[{self.name}] Analyzing {len(state.raw_signals)} raw signals...")
@@ -141,7 +143,7 @@ class SignalAnalystAgent(BaseAgent):
             is_breakout = velocity_delta.get("has_history", False) and (delta_stars >= 30)
 
             category = self._determine_category(signal.title, signal.raw_snippet, signal.source_type)
-            velocity = self._compute_velocity_score(signal)
+            velocity = self._compute_velocity_score(signal, velocity_delta)
             
             # If it's a breakout surge, override duplicate penalty and boost scores!
             if is_breakout:
