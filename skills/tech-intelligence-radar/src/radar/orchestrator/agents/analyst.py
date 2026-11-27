@@ -126,6 +126,43 @@ class SignalAnalystAgent(BaseAgent):
 
         return min(10.0, round(score, 1))
 
+    def _build_takeaway(self, signal, category: str, velocity: float, novelty: float, velocity_delta: dict, is_breakout: bool) -> str:
+        """Synthesize a crisp 'Why You Should Care' engineering takeaway distinct from raw description."""
+        m = signal.metrics or {}
+        if is_breakout:
+            badge = velocity_delta.get("badge", "Surge Detected")
+            return f"⚡ {badge}. Rapid ecosystem adoption signals active production experimentation in {category}."
+
+        if signal.source_type == "github":
+            stars = int(m.get("stars", 0))
+            forks = int(m.get("forks", 0))
+            lang = m.get("language") or "Multi-language"
+            return (
+                f"Active {lang} open-source {category.lower()} with {stars:,} GitHub stars and {forks:,} forks "
+                f"(Velocity {velocity}/10, Novelty {novelty}/10) — worth evaluating for your AI workflow stack."
+            )
+        elif signal.source_type == "hackernews":
+            pts = int(m.get("points", 0))
+            cmts = int(m.get("comments", 0))
+            return (
+                f"Sparked high-signal developer debate on Hacker News ({pts:,} points, {cmts:,} comments), "
+                f"indicating strong practitioner interest in this {category.lower()}."
+            )
+        elif signal.source_type == "reddit":
+            sc = int(m.get("score", 0))
+            cmts = int(m.get("comments", 0))
+            sub = m.get("subreddit", "LocalLLaMA")
+            return (
+                f"Practitioner discussion in r/{sub} ({sc:,} upvotes, {cmts:,} comments) highlighting hands-on benchmarks, "
+                f"trade-offs, or real-world deployment patterns."
+            )
+        elif signal.source_type == "arxiv":
+            return (
+                f"Recent research preprint advancing formal architectures or safety/evaluation methods for autonomous AI systems "
+                f"(Novelty {novelty}/10)."
+            )
+        return f"Verified emerging signal in {category} (Velocity {velocity}/10, Novelty {novelty}/10)."
+
     async def execute(self, state: RadarState) -> None:
         state.log(f"[{self.name}] Analyzing {len(state.raw_signals)} raw signals...")
         
